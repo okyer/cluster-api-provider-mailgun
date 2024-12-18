@@ -19,18 +19,23 @@ package controller
 import (
 	"context"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrastructurev1alpha1 "github.com/okyer/cluster-api-provider-mailgun/api/v1alpha1"
+	"github.com/pkg/errors"
 )
 
 // MailgunClusterReconciler reconciles a MailgunCluster object
 type MailgunClusterReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	// Mailgun   mailgun.Mailgun
+	Recipient string
 }
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=mailgunclusters,verbs=get;list;watch;create;update;patch;delete
@@ -47,9 +52,42 @@ type MailgunClusterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/reconcile
 func (r *MailgunClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+	logr := log.FromContext(ctx)
+	logr.WithValues("mailguncluster", req.NamespacedName)
 
 	// TODO(user): your logic here
+	var cluster infrastructurev1alpha1.MailgunCluster
+	if err := r.Get(ctx, req.NamespacedName, &cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	if cluster.Status.MessageID != nil {
+		// We already sent a message, so skip reconciliation
+		return ctrl.Result{}, nil
+	}
+
+	// subject := fmt.Sprintf("[%s] New Cluster %s requested", cluster.Spec.Priority, cluster.Name)
+	// body := fmt.Sprintf("Hello! One cluster please.\n\n%s\n", cluster.Spec.Request)
+
+	// msg := mailgun.NewMessage(cluster.Spec.Requester, subject, body, r.Recipient)
+	// _, msgID, err := r.Mailgun.Send(msg)
+	// if err != nil {
+	// 	return ctrl.Result{}, err
+	// }
+
+	msgID := "test"
+
+	helper, err := patch.NewHelper(&cluster, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	cluster.Status.MessageID = &msgID
+	if err := helper.Patch(ctx, &cluster); err != nil {
+		return ctrl.Result{}, errors.Wrapf(err, "couldn't patch cluster %q", cluster.Name)
+	}
 
 	return ctrl.Result{}, nil
 }

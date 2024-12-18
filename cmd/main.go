@@ -25,6 +25,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/okyer/cluster-api-provider-mailgun/internal/controller"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -138,6 +139,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	recipient := os.Getenv("MAIL_RECIPIENT")
+	if recipient == "" {
+		setupLog.Info("missing required env MAIL_RECIPIENT")
+		os.Exit(1)
+	}
+	// 将控制器注册到控制器管理器
+	if err = (&controller.MailgunClusterReconciler{
+		Client:    mgr.GetClient(),
+		Recipient: recipient,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "MailgunCluster")
+		os.Exit(1)
+	}
+
+	if err = (&controller.MailgunMachineReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "MailgunMachine")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
